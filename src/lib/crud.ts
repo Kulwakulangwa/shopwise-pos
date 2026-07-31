@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
+// The generated Database types do not yet describe the operations schema, so we
+// use a loosely typed client for the business tables.
 export const db = supabase as unknown as {
   from: (table: string) => any;
   auth: typeof supabase.auth;
@@ -46,12 +48,12 @@ export async function requireRole(requiredRole: string) {
     throw new Error("Not authenticated");
   }
   const { data, error } = await db
-    .from("users")
-    .select("roles(name)")
-    .eq("id", user.id)
-    .single();
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .maybeSingle();
   if (error) throw error;
-  if (!data?.roles || data.roles.name !== requiredRole) {
+  if (!data || data.role !== requiredRole) {
     throw new Error("Insufficient permissions");
   }
   return user;
@@ -118,7 +120,7 @@ export async function applyStockMovement(params: {
   productId: string;
   warehouseId: string;
   type: "in" | "out" | "adjustment";
-  quantity: number;
+  quantity: number; // positive for in, positive for out (subtracted), signed for adjustment
   referenceType?: string;
   referenceId?: string;
   note?: string;
