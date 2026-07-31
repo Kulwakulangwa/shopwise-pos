@@ -3,8 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
-// The generated Database types do not yet describe the operations schema, so we
-// use a loosely typed client for the business tables.
 export const db = supabase as unknown as {
   from: (table: string) => any;
   auth: typeof supabase.auth;
@@ -19,7 +17,7 @@ export function useRows<T = Row>(
 ) {
   const { select = "*", order, filters = [], enabled = true } = options;
   return useQuery<T[]>({
-    queryKey: [table, select, order, filters],
+    queryKey: [table, select, order, JSON.stringify(filters)],
     enabled,
     queryFn: async () => {
       let q = db.from(table).select(select);
@@ -37,10 +35,43 @@ export async function currentUserId(): Promise<string | null> {
   return data.user?.id ?? null;
 }
 
-export async function logActivity(action: string, entity: string, entityId?: string, details: Row = {}) {
+export async function currentUser() {
+  const { data } = await supabase.auth.getUser();
+  return data.user ?? null;
+}
+
+export async function requireRole(requiredRole: string) {
+  const user = await currentUser();
+  if (!user) {
+    throw new Error("Not authenticated");
+  }
+  const { data, error } = await db
+    .from("users")
+    .select("roles(name)")
+    .eq("id", user.id)
+    .single();
+  if (error) throw error;
+  if (!data?.roles || data.roles.name !== requiredRole) {
+    throw new Error("Insufficient permissions");
+  }
+  return user;
+}
+
+export async function logActivity(
+  action: string,
+  entity: string,
+  entityId?: string,
+  details: Row = {}
+) {
   const userId = await currentUserId();
   if (!userId) return;
-  await db.from("activity_logs").insert({ user_id: userId, action, entity, entity_id: entityId ?? null, details });
+  await db.from("activity_logs").insert({
+    user_id: userId,
+    action,
+    entity,
+    entity_id: entityId ?? null,
+    details,
+  });
 }
 
 export function useSaveRow(table: string, invalidate: string[] = []) {
@@ -87,7 +118,7 @@ export async function applyStockMovement(params: {
   productId: string;
   warehouseId: string;
   type: "in" | "out" | "adjustment";
-  quantity: number; // positive for in, positive for out (subtracted), signed for adjustment
+  quantity: number;
   referenceType?: string;
   referenceId?: string;
   note?: string;
@@ -158,4 +189,13 @@ export async function recordCash(params: {
       await db.from("bank_accounts").update({ current_balance: next }).eq("id", acct.id);
     }
   }
+}
+
+/** Generate document numbers: INV-0001, PO-0002, etc. */
+let _counters: Record<string, number> = {};
+export async function docNumber(prefix: string): Promise<string> {
+  // Simple in‑memory counter – replace with database sequence for production.
+  if (!_counters[prefix]) _counters[prefix] = 0;
+  _counters[prefix] += 1;
+  return `${prefix}-${String(_counters[prefix]).padStart(4, "0")}`;
 }
