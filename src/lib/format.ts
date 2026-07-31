@@ -33,6 +33,20 @@ export function dateTime(value: string | null | undefined): string {
   });
 }
 
+// ===== ADD THESE TWO =====
+export const date = dateOnly;
+
+export function time(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+// ===== END ADD =====
+
 export function docNumber(prefix: string): string {
   const d = new Date();
   const stamp =
