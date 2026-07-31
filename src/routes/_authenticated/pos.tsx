@@ -96,15 +96,28 @@ function POS() {
     setLines((cur) => cur.map((l) => (l.productId === id ? { ...l, qty: Math.max(1, qty) } : l)));
 
   const checkout = async () => {
-    if (!lines.length) return toast.error("Cart is empty");
-    if (!warehouseId) return toast.error("Choose a warehouse");
-    if (credit && !customerId) return toast.error("Credit sales need a customer");
+    if (!lines.length) {
+      toast.error("Cart is empty");
+      return;
+    }
+    if (!warehouseId) {
+      toast.error("Choose a warehouse");
+      return;
+    }
+    if (credit && !customerId) {
+      toast.error("Credit sales need a customer");
+      return;
+    }
     for (const l of lines) {
       if (l.tracksSerial && l.serials.length !== l.qty) {
-        return toast.error(`Select ${l.qty} serial number(s) for ${l.name}`);
+        toast.error(`Select ${l.qty} serial number(s) for ${l.name}`);
+        return;
       }
     }
-    if (overLimit && blockOverLimit) return toast.error("Credit limit exceeded — sale blocked");
+    if (overLimit && blockOverLimit) {
+      toast.error("Credit limit exceeded — sale blocked");
+      return;
+    }
 
     setBusy(true);
     try {
