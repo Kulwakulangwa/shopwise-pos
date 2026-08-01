@@ -10,7 +10,7 @@ import { FormDialog, type Field } from "@/components/FormDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { applyStockMovement, useRows, useSaveRow, useDeleteRow, db } from "@/lib/crud";
-import { dateTime, money, num, generateSKU } from "@/lib/format"; // ← added generateSKU
+import { dateTime, money, num, generateSKU } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/inventory")({
   head: () => ({
@@ -43,7 +43,7 @@ function Inventory() {
 
   const [productOpen, setProductOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [generatedSku, setGeneratedSku] = useState(""); // ← new state
+  const [generatedSku, setGeneratedSku] = useState("");
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [warehouseOpen, setWarehouseOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState<null | "in" | "out" | "adjustment">(null);
@@ -123,7 +123,7 @@ function Inventory() {
               size="sm"
               onClick={() => {
                 setEditing(null);
-                setGeneratedSku(generateSKU()); // ← generate fresh SKU
+                setGeneratedSku(generateSKU());
                 setProductOpen(true);
               }}
             >
@@ -291,13 +291,11 @@ function Inventory() {
         </TabsContent>
       </Tabs>
 
-      {/* Product Dialog */}
       <FormDialog
         open={productOpen}
         onOpenChange={(open) => {
           setProductOpen(open);
           if (!open) {
-            // Reset generated SKU when dialog closes
             setGeneratedSku("");
           }
         }}
@@ -328,7 +326,7 @@ function Inventory() {
             },
           });
           setProductOpen(false);
-          setGeneratedSku(""); // clean up
+          setGeneratedSku("");
         }}
       />
 
@@ -436,7 +434,7 @@ function SerialsTab({
         onSubmit={async (v) => {
           const { error } = await db
             .from("serial_numbers")
-            .insert({ product_id: v.product_id, warehouse_id: v.warehouse_id, serial: v.serial, status: "in_stock" });
+            .insert({ product_id: v.product_id, warehouse_id: v.warehouse_id, serial: v.serial, status: "available" });
           if (error) {
             toast.error(error.message);
             return;
