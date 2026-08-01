@@ -10,7 +10,7 @@ import { FormDialog, type Field } from "@/components/FormDialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { applyStockMovement, useRows, useSaveRow, useDeleteRow, db } from "@/lib/crud";
-import { dateTime, money, num } from "@/lib/format";
+import { dateTime, money, num, generateSKU } from "@/lib/format"; // ← added generateSKU
 
 export const Route = createFileRoute("/_authenticated/inventory")({
   head: () => ({
@@ -43,6 +43,7 @@ function Inventory() {
 
   const [productOpen, setProductOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [generatedSku, setGeneratedSku] = useState(""); // ← new state
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [warehouseOpen, setWarehouseOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState<null | "in" | "out" | "adjustment">(null);
@@ -122,6 +123,7 @@ function Inventory() {
               size="sm"
               onClick={() => {
                 setEditing(null);
+                setGeneratedSku(generateSKU()); // ← generate fresh SKU
                 setProductOpen(true);
               }}
             >
@@ -289,12 +291,23 @@ function Inventory() {
         </TabsContent>
       </Tabs>
 
+      {/* Product Dialog */}
       <FormDialog
         open={productOpen}
-        onOpenChange={setProductOpen}
+        onOpenChange={(open) => {
+          setProductOpen(open);
+          if (!open) {
+            // Reset generated SKU when dialog closes
+            setGeneratedSku("");
+          }
+        }}
         title={editing ? "Edit product" : "New product"}
         fields={productFields}
-        initial={editing ?? { unit: "pcs", is_active: true, reorder_level: 5 }}
+        initial={
+          editing
+            ? editing
+            : { sku: generatedSku, unit: "pcs", is_active: true, reorder_level: 5 }
+        }
         submitting={saveProduct.isPending}
         onSubmit={async (v) => {
           await saveProduct.mutateAsync({
@@ -315,6 +328,7 @@ function Inventory() {
             },
           });
           setProductOpen(false);
+          setGeneratedSku(""); // clean up
         }}
       />
 
