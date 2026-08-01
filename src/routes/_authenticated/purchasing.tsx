@@ -16,6 +16,8 @@ import {
   XCircle,
   RefreshCw,
   ArrowRight,
+  X,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/ui-kit";
@@ -99,6 +101,12 @@ type GoodsReceipt = {
   items?: any[];
 };
 
+type PRItem = {
+  product_id: string;
+  quantity: number;
+  estimated_cost: number;
+};
+
 function Purchasing() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<"requests" | "orders" | "receiving">("requests");
@@ -110,6 +118,9 @@ function Purchasing() {
   const [requestOpen, setRequestOpen] = useState(false);
   const [poOpen, setPoOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [prDialogOpen, setPrDialogOpen] = useState(false);
+  const [prItems, setPrItems] = useState<PRItem[]>([{ product_id: "", quantity: 1, estimated_cost: 0 }]);
+  const [prNote, setPrNote] = useState("");
   const [processing, setProcessing] = useState(false);
 
   // Fetch data
@@ -186,8 +197,10 @@ function Purchasing() {
 
   // Handlers for requests
   const createRequest = () => {
-    // Simplified: open a form dialog with items. For brevity, we'll use a simple modal.
-    toast.info("Create Purchase Request - full form coming soon");
+    // Reset form
+    setPrItems([{ product_id: "", quantity: 1, estimated_cost: 0 }]);
+    setPrNote("");
+    setPrDialogOpen(true);
   };
 
   const approveRequest = async (id: string) => {
@@ -210,19 +223,103 @@ function Purchasing() {
     }
   };
 
+  const submitPurchaseRequest = async () => {
+    // Validate: at least one item with product selected
+    const validItems = prItems.filter(item => item.product_id && item.quantity > 0);
+    if (validItems.length === 0) {
+      toast.error("Add at least one product with a valid quantity.");
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      const userId = await currentUserId();
+      const prNumber = await docNumber("PR");
+
+      // Calculate total estimated cost
+      const total = validItems.reduce((sum, item) => sum + (item.quantity * item.estimated_cost), 0);
+
+      // Insert purchase request
+      const { data: pr, error: prError } = await db
+        .from("purchase_requests")
+        .insert({
+          request_number: prNumber,
+          requested_by: userId,
+          status: "pending",
+          notes: prNote || null,
+          created_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+
+      if (prError) throw prError;
+
+      // Insert items
+      for (const item of validItems) {
+        const { error: itemError } = await db
+          .from("purchase_request_items")
+          .insert({
+            purchase_request_id: pr.id,
+            product_id: item.product_id,
+            quantity: item.quantity,
+            estimated_cost: item.estimated_cost,
+          });
+        if (itemError) throw itemError;
+      }
+
+      toast.success(`Purchase Request ${prNumber} created successfully.`);
+      setPrDialogOpen(false);
+      // Reset items
+      setPrItems([{ product_id: "", quantity: 1, estimated_cost: 0 }]);
+      setPrNote("");
+      // Invalidate queries
+      void qc.invalidateQueries({ queryKey: ["purchase_requests"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to create purchase request.");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const addPrItem = () => {
+    setPrItems([...prItems, { product_id: "", quantity: 1, estimated_cost: 0 }]);
+  };
+
+  const removePrItem = (index: number) => {
+    if (prItems.length === 1) {
+      toast.warning("At least one item is required.");
+      return;
+    }
+    const newItems = prItems.filter((_, i) => i !== index);
+    setPrItems(newItems);
+  };
+
+  const updatePrItem = (index: number, field: keyof PRItem, value: any) => {
+    const newItems = [...prItems];
+    if (field === 'product_id') {
+      const product = (products.data ?? []).find((p: any) => p.id === value);
+      if (product) {
+        newItems[index].product_id = value;
+        newItems[index].estimated_cost = Number(product.cost_price) || 0;
+      } else {
+        newItems[index].product_id = value;
+      }
+    } else {
+      newItems[index][field] = value;
+    }
+    setPrItems(newItems);
+  };
+
   // Handlers for PO
   const createPO = async (requestId?: string) => {
-    // Simplified: open a form to select supplier, warehouse, and items.
     toast.info("Create Purchase Order - coming soon");
   };
 
   // Handlers for goods receiving
   const receiveGoods = async (poId: string) => {
-    // This will process a goods receipt based on the PO.
     setProcessing(true);
     try {
       const userId = await currentUserId();
-      // Get PO with items
       const { data: po, error: poErr } = await db
         .from("purchase_orders")
         .select("*, items: purchase_order_items(*)")
@@ -235,8 +332,7 @@ function Purchasing() {
         return;
       }
 
-      // Create goods receipt
-      const grNumber = docNumber("GR");
+      const grNumber = await docNumber("GR");
       const { data: gr, error: grErr } = await db
         .from("goods_receipts")
         .insert({
@@ -247,24 +343,20 @@ function Purchasing() {
           status: "completed",
           total: po.total,
           received_at: new Date().toISOString(),
-          created_by: userId,
+          received_by: userId,
         })
         .select("id")
         .single();
       if (grErr) throw grErr;
 
-      // Process each item: update stock, create stock_movements, and insert receipt items
       for (const item of po.items) {
-        // Insert receipt item
         await db.from("goods_receipt_items").insert({
           receipt_id: gr.id,
           product_id: item.product_id,
           quantity: item.quantity,
-          cost_price: item.cost_price,
-          total: item.total,
+          unit_cost: item.unit_cost,
         });
 
-        // Update stock
         await applyStockMovement({
           productId: item.product_id,
           warehouseId: po.warehouse_id,
@@ -276,7 +368,6 @@ function Purchasing() {
         });
       }
 
-      // Mark PO as received (or partially if some items missing? For now full)
       await db
         .from("purchase_orders")
         .update({ status: "received" })
@@ -297,6 +388,13 @@ function Purchasing() {
   const totalOrders = (orders.data ?? []).length;
   const pendingOrders = (orders.data ?? []).filter((o: any) => o.status === "sent" || o.status === "partially_received").length;
   const totalReceipts = (receipts.data ?? []).length;
+
+  // Product options for dropdown
+  const productOptions = (products.data ?? []).map((p: any) => ({
+    value: p.id,
+    label: `${p.sku} — ${p.name} (TZS ${money(p.cost_price)})`,
+    cost_price: p.cost_price,
+  }));
 
   return (
     <div>
@@ -454,8 +552,8 @@ function Purchasing() {
                       <TableRow key={item.id}>
                         <TableCell>{products.data?.find((p: any) => p.id === item.product_id)?.name || item.product_id}</TableCell>
                         <TableCell>{item.quantity}</TableCell>
-                        <TableCell>{money(item.cost_price)}</TableCell>
-                        <TableCell>{money(item.total)}</TableCell>
+                        <TableCell>{money(item.estimated_cost)}</TableCell>
+                        <TableCell>{money(item.quantity * item.estimated_cost)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -510,7 +608,7 @@ function Purchasing() {
                       <TableRow key={item.id}>
                         <TableCell>{products.data?.find((p: any) => p.id === item.product_id)?.name || item.product_id}</TableCell>
                         <TableCell>{item.quantity}</TableCell>
-                        <TableCell>{money(item.cost_price)}</TableCell>
+                        <TableCell>{money(item.unit_cost)}</TableCell>
                         <TableCell>{money(item.total)}</TableCell>
                       </TableRow>
                     ))}
@@ -579,8 +677,8 @@ function Purchasing() {
                       <TableRow key={item.id}>
                         <TableCell>{products.data?.find((p: any) => p.id === item.product_id)?.name || item.product_id}</TableCell>
                         <TableCell>{item.quantity}</TableCell>
-                        <TableCell>{money(item.cost_price)}</TableCell>
-                        <TableCell>{money(item.total)}</TableCell>
+                        <TableCell>{money(item.unit_cost)}</TableCell>
+                        <TableCell>{money(item.quantity * item.unit_cost)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -591,6 +689,119 @@ function Purchasing() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* New Purchase Request Dialog */}
+      <Dialog open={prDialogOpen} onOpenChange={setPrDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>New Purchase Request</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Add products you need to purchase. After approval, it can be converted to a Purchase Order.
+            </p>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Note (optional)</Label>
+              <Input
+                value={prNote}
+                onChange={(e) => setPrNote(e.target.value)}
+                placeholder="e.g., Urgent restock for customer orders"
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <Label>Items</Label>
+                <Button variant="outline" size="sm" onClick={addPrItem}>
+                  <Plus className="size-3.5" /> Add row
+                </Button>
+              </div>
+              <div className="mt-2 overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead className="w-20">Qty</TableHead>
+                      <TableHead className="w-28">Est. Cost</TableHead>
+                      <TableHead className="w-28">Total</TableHead>
+                      <TableHead className="w-10"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {prItems.map((item, index) => {
+                      const product = (products.data ?? []).find((p: any) => p.id === item.product_id);
+                      const total = item.quantity * (Number(item.estimated_cost) || 0);
+                      return (
+                        <TableRow key={index}>
+                          <TableCell>
+                            <Select
+                              value={item.product_id}
+                              onValueChange={(v) => updatePrItem(index, 'product_id', v)}
+                            >
+                              <SelectTrigger className="w-full min-w-[150px]">
+                                <SelectValue placeholder="Select product" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {productOptions.map((p: any) => (
+                                  <SelectItem key={p.value} value={p.value}>
+                                    {p.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={item.quantity}
+                              onChange={(e) => updatePrItem(index, 'quantity', Number(e.target.value))}
+                              className="w-20"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.estimated_cost}
+                              onChange={(e) => updatePrItem(index, 'estimated_cost', Number(e.target.value))}
+                              className="w-28"
+                            />
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {money(total)}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => removePrItem(index)}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              {prItems.length === 0 && (
+                <div className="py-4 text-center text-sm text-muted-foreground">
+                  No items yet. Click "Add row" to include products.
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="outline" onClick={() => setPrDialogOpen(false)}>Cancel</Button>
+              <Button onClick={submitPurchaseRequest} disabled={processing}>
+                {processing ? "Submitting..." : "Submit Request"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
