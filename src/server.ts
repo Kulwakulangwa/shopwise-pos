@@ -18,8 +18,6 @@ async function getServerEntry(): Promise<ServerEntry> {
   return serverEntryPromise;
 }
 
-// h3 swallows in-handler throws into a normal 500 Response with body
-// {"unhandled":true,"message":"HTTPError"} — try/catch alone never fires for those.
 async function normalizeCatastrophicSsrResponse(response: Response): Promise<Response> {
   if (response.status < 500) return response;
   const contentType = response.headers.get("content-type") ?? "";
@@ -44,6 +42,9 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
+// Add a startup log to verify the function is invoked
+console.log("🔥 Server function is starting...");
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
@@ -59,3 +60,5 @@ export default {
     }
   },
 };
+
+console.log("✅ Server function registered");
