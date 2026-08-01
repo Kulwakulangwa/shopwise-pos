@@ -1,6 +1,7 @@
+// Use your enhanced error-capture – it’s better than the simple one.
 import "./lib/error-capture";
 
-import { consumeLastCapturedError } from "./lib/error-capture";
+import { consumeLastCapturedError, describeError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
 type ServerEntry = {
@@ -42,7 +43,7 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
-// Add a startup log to verify the function is invoked
+// Log to verify the function is running
 console.log("🔥 Server function is starting...");
 
 export default {
