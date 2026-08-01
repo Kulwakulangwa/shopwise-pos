@@ -1,3 +1,5 @@
+// src/lib/format.ts
+
 export const TZS = new Intl.NumberFormat("en-TZ", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -33,7 +35,6 @@ export function dateTime(value: string | null | undefined): string {
   });
 }
 
-// ===== ADD THESE TWO =====
 export const date = dateOnly;
 
 export function time(value: string | null | undefined): string {
@@ -45,7 +46,6 @@ export function time(value: string | null | undefined): string {
     minute: "2-digit",
   });
 }
-// ===== END ADD =====
 
 export function docNumber(prefix: string): string {
   const d = new Date();
@@ -56,6 +56,17 @@ export function docNumber(prefix: string): string {
     "-" +
     Math.floor(Math.random() * 9000 + 1000);
   return `${prefix}-${stamp}`;
+}
+
+// ✅ ADD THIS FUNCTION
+export function generateSKU(prefix = "SKU"): string {
+  const now = new Date();
+  const datePart =
+    String(now.getFullYear()) +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0");
+  const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${prefix}-${datePart}-${randomPart}`;
 }
 
 export function daysBetween(from: string, to = new Date().toISOString()): number {
